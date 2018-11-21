@@ -37,17 +37,17 @@ OBJS          		= 	\
 					$(OBJ_DIR)/TAppEncTop.o \
 
 # set libs to link with
-LIBS				= -ldl
+LIBS				= -ldl -lpthread -I/usr/local/include -L/usr/local/lib -lopencv_viz -lopencv_superres -lopencv_objdetect -lopencv_stitching -lopencv_ml -lopencv_dnn -lopencv_videostab -lopencv_calib3d -lopencv_features2d -lopencv_flann -lopencv_highgui -lopencv_photo -lopencv_shape -lopencv_video -lopencv_videoio -lopencv_imgcodecs -lopencv_imgproc -lopencv_core
 
 DEBUG_LIBS			=
 RELEASE_LIBS		=
 
-STAT_LIBS			= -lpthread
+STAT_LIBS			= -lpthread -I/usr/local/include -L/usr/local/lib -lopencv_viz -lopencv_superres -lopencv_objdetect -lopencv_stitching -lopencv_ml -lopencv_dnn -lopencv_videostab -lopencv_calib3d -lopencv_features2d -lopencv_flann -lopencv_highgui -lopencv_photo -lopencv_shape -lopencv_video -lopencv_videoio -lopencv_imgcodecs -lopencv_imgproc -lopencv_core
 DYN_LIBS			=
 
 
 DYN_DEBUG_LIBS		= -lTLibEncoder$(HBD)d -lTLibCommon$(HBD)d -lTLibVideoIO$(HBD)d -lTAppCommon$(HBD)d
-DYN_DEBUG_PREREQS		= $(LIB_DIR)/libTLibEncoder$(HBD)d.a $(LIB_DIR)/libTLibCommon$(HBD)d.a $(LIB_DIR)/libTLibVideoIO$(HBD)d.a $(LIB_DIR)/libTAppCommon$(HBD)d.a
+DYN_DEBUG_PREREQS		= $(LIB_DIR)/libTLibEncoder$(HBD)d.a $(LIB_DIR)/libTLibCommon$(HBD)d.a $(LIB_DIR)/libTLibVideoIO$(HBD)d.a $(LIB_DIR)/libTAppCommon$(HBD)d.a'
 STAT_DEBUG_LIBS		= -lTLibEncoder$(HBD)Staticd -lTLibCommon$(HBD)Staticd -lTLibVideoIO$(HBD)Staticd -lTAppCommon$(HBD)Staticd
 STAT_DEBUG_PREREQS		= $(LIB_DIR)/libTLibEncoder$(HBD)Staticd.a $(LIB_DIR)/libTLibCommon$(HBD)Staticd.a $(LIB_DIR)/libTLibVideoIO$(HBD)Staticd.a $(LIB_DIR)/libTAppCommon$(HBD)Staticd.a
 

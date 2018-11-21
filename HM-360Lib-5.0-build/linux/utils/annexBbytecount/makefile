@@ -29,7 +29,7 @@ OBJS          		= 	\
 					$(OBJ_DIR)/annexBbytecount.o \
 
 # set libs to link with
-LIBS				= -ldl
+LIBS				= -ldl -I/usr/local/include -L/usr/local/lib -lopencv_viz -lopencv_superres -lopencv_objdetect -lopencv_stitching -lopencv_ml -lopencv_dnn -lopencv_videostab -lopencv_calib3d -lopencv_features2d -lopencv_flann -lopencv_highgui -lopencv_photo -lopencv_shape -lopencv_video -lopencv_videoio -lopencv_imgcodecs -lopencv_imgproc -lopencv_core
 
 DEBUG_LIBS			=
 RELEASE_LIBS		=

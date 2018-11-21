@@ -45,6 +45,18 @@
 
 #include "../Lib/TLibCommon/Debug.h"
 
+// iagostorch begin
+
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <opencv2/imgproc.hpp>
+#include "opencv2/imgcodecs.hpp"
+using namespace cv;
+
+// iagostorch end
+
+
 // ====================================================================================================================
 // Main function
 // ====================================================================================================================
@@ -52,7 +64,7 @@
 int main(int argc, char* argv[])
 {
   TAppEncTop  cTAppEncTop;
-
+  
   // print information
   fprintf( stdout, "\n" );
   fprintf( stdout, "HM software: Encoder Version [%s] (including RExt)", NV_VERSION );

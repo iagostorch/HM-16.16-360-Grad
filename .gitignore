@@ -1,0 +1,15 @@
+bin
+.svn
+nbproject
+HM.xcodeproj
+.cproject
+.project
+.settings/
+build/HM_vc10.sln
+build/HM_vc8.sln
+build/HM_vc9.sln
+build/vc10
+build/vc8
+build/vc9
+objects
+*~
