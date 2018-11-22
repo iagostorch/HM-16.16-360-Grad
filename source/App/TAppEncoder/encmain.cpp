@@ -54,6 +54,7 @@
 #include "opencv2/imgcodecs.hpp"
 using namespace cv;
 
+int** predModes;    // global variable to maintain the prediction modes per sample for the current CTU
 // iagostorch end
 
 
@@ -64,6 +65,25 @@ using namespace cv;
 int main(int argc, char* argv[])
 {
   TAppEncTop  cTAppEncTop;
+  
+  // iagostorch begin
+  // This code never runs because argc is always greater than 1
+  // The code enables the use of opencv methods in TLibEncoder files, not sure why. Probably library linking issues
+  if(argc < 0){   
+    cv::Mat img;
+    img = cv::imread("no_image.jpg", CV_LOAD_IMAGE_COLOR);
+    cv::Mat deg;
+    cv::Sobel(img,deg,CV_16S,1,0,3,1,0,BORDER_DEFAULT);
+    namedWindow( "Display window", WINDOW_AUTOSIZE ); // Create a window for display.
+    imshow( "Display window", img );                // Show our image inside it.
+    waitKey(25); // Wait for a keystroke in the window
+  }
+      
+  predModes = (int **)malloc(64 * sizeof(int *)); 
+  for (int i=0; i<64; i++) 
+    predModes[i] = (int *)malloc(64 * sizeof(int)); 
+  
+  // iagostorch end
   
   // print information
   fprintf( stdout, "\n" );
@@ -112,7 +132,7 @@ int main(int argc, char* argv[])
   // ending time
   dResult = (Double)(clock()-lBefore) / CLOCKS_PER_SEC;
   printf("\n Total Time: %12.3f sec.\n", dResult);
-
+  
   // destroy application encoder class
   cTAppEncTop.destroy();
 

@@ -45,6 +45,57 @@
 #include <limits>
 
 
+// iagostorch begin
+
+#include <string>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <opencv2/imgproc.hpp>
+#include "opencv2/imgcodecs.hpp"
+#include <fstream>
+
+using namespace cv;
+
+extern int** predModes;    // global variable to maintain the prediction modes per sample for the current CTU
+cv::Mat gradMag;    // global variable to maintain the gradient magnitude for the samples in the current CTU
+
+// Angles based on the paper Fast HEVC Intra Coding Algorithm Based on Otsu’s Method and Gradient
+float degreesOfModes[35] = {-360,-360,-46,-50.906,-56.725,-62.021,-67.891,-74.281,-81.119,-86.424,90,
+                            86.424,81.119,74.281,67.891,62.021,56.725,50.906,45,39.094,33.275,
+                            27.980,22.109,15.709,8.881,3.576,0,-3.576,-8.881,-15.709,-22.109,
+                            -27.980,-33.275,-39.094,-44};
+
+Mat degreesOfModesMat = Mat(1,35,CV_32F,degreesOfModes);
+
+int** degToMode(float** orientations90){
+    int i,j,smallest=0,index=0;
+    float diff[35];
+    
+    int **modes = (int **)malloc(64 * sizeof(int *)); 
+    for (i=0; i<64; i++) 
+         modes[i] = (int *)malloc(64 * sizeof(int));
+
+    for(i=0; i<64; i++){
+        for(j=0; j<64; j++){
+            smallest=0;
+            for(index=0; index<35; index++){
+             
+                diff[index] = abs(degreesOfModes[index] - orientations90[i][j]);
+                if(diff[index] < diff[smallest])
+                    smallest=index;
+            }
+            modes[i][j]=smallest;
+        }
+    }
+    
+    
+    
+    return modes;
+}
+
+// iagostorch end
+
 //! \ingroup TLibEncoder
 //! \{
 
@@ -2247,6 +2298,134 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
     assert (tuRecurseWithPU.ProcessComponentSection(COMPONENT_Y));
     initIntraPatternChType( tuRecurseWithPU, COMPONENT_Y, true DEBUG_STRING_PASS_INTO(sTemp2) );
 
+    //iagostorch begin
+    
+    // If the PU has the maximum size (PU = CTU), calculate the gradient and probable modes for each sample
+    if(uiWidthBit == 5){
+        // Saves the current CTU samples into a Mat object
+        const UInt uiAbsPartIdx_temp=tuRecurseWithPU.GetAbsPartIdxTU();
+        Pel* samplesCTU         = pcOrgYuv ->getAddr( COMPONENT_Y, uiAbsPartIdx_temp );
+        cv::Mat currCTU = cv::Mat(64,64,CV_16U,samplesCTU);
+        // TO DO Perform the following line based on the cfg information
+        currCTU = currCTU / 4;  // As we are using 10 bits encoding, the sample are divided by 4 to perform the calculations over 8 bits images
+//        cv::imwrite("originalCTU_16S.png",currCTU);   // Write the current CTU into a file
+        currCTU.convertTo(currCTU, CV_32F);
+        
+        
+        // Sobel operator in X and Y direction
+        cv::Mat gradx, grady, absgradx, absgrady;
+        int scale = 1,delta = 0, ddepth = CV_32F;
+        cv::Sobel(currCTU,gradx,ddepth,1,0,3,scale,delta,BORDER_DEFAULT);
+        cv::Sobel(currCTU,grady,ddepth,0,1,3,scale,delta,BORDER_DEFAULT);
+        // Absolute values
+        cv::convertScaleAbs(gradx, absgradx);
+        cv::convertScaleAbs(grady, absgrady);
+
+        // Does an approximation of the gradient magnitude. Average of dx and dy instead of square root of powered sum
+        cv::addWeighted(absgradx, 0.5, absgrady, 0.5, 0, gradMag);
+
+        // Export the CTU and its contour into files
+//        cv::imwrite("originalCTU_32F.png",currCTU);
+//        cv::imwrite("contourCTU.png",gradMag);
+
+        // Gets the orientation of the gradient in each sample of the CTU
+        cv::Mat orientation = cv::Mat(64,64,CV_32F);
+        cv::phase(gradx,grady,orientation,true); //false -> radians, true->degrees
+
+
+        // Saves the gradient orientation into a file, formatted as a matrix
+//        ofstream orientationFile("orientations.csv");
+//        orientationFile << format(orientation, cv::Formatter::FMT_CSV) << endl;
+//        orientationFile.close();
+
+//        // Saves the gradient magnitude into a file, formatted as a matrix
+//        ofstream magnitudeFile("magnitudes.csv");
+//        magnitudeFile << format(grad, cv::Formatter::FMT_CSV) << endl;
+//        magnitudeFile.close();
+
+        // Temporary matrixes to calculate the most probable modes based on gradient
+        Mat orientation90_1, orientation90_2,orientation90_3, orientation90;
+
+        // Calculos para colocar as orientações dentro da faixa +-90 graus, na Matriz orientation90
+        // Calculus to shift the gradient orientation from 0 -> 360 to -90 -> +90 range
+        subtract(orientation, 180.0f, orientation90_1, (orientation > 90.0));
+        orientation90_1.setTo(0, orientation90_1 > 90);       
+
+        subtract(orientation, 360.0f, orientation90_2, (orientation >= 270.0));
+
+        orientation90_3 = orientation;
+        orientation90_3.setTo(0, orientation90_3 > 90);
+
+        // Final matrix with angles in the range +-90
+        orientation90 = orientation90_1 + orientation90_2 + orientation90_3;
+
+//        // Saves the gradient orientation angles in the +-90 range into a file, formatted as a matrix
+//        ofstream lesserFile("orientation90.csv");
+//        lesserFile << format(orientation90, cv::Formatter::FMT_CSV) << endl;
+//        lesserFile.close();
+
+        // Calculus to map the orientation degrees into prediction modes
+        int index;
+        // Transform the OpenCV types into C++ native types
+        float **orientationArray = new float*[orientation90.rows];
+
+        for (index=0; index<orientation90.rows; ++index){
+          orientationArray[index] = new float[orientation90.cols];
+        }
+
+        for (index=0; index<orientation90.rows; ++index){
+          orientationArray[index] = orientation90.ptr<float>(index);
+        }
+
+        // Transforms the orientation angles into prediction modes
+        predModes = degToMode(orientationArray);
+
+        // Saves the prediction angles per sample into a file, formatted as a matrix
+//        std::ofstream out("predictionModes.csv");
+//        int c1,c2;         
+//        for(c1=0;c1<64;c1++){
+//            for(c2=0;c2<64;c2++){
+//                out << modes[c1][c2] << ",";;
+//            }
+//            out << "\n";
+//        }     
+    }
+    // Counts the number of times each prediction mode occurred in the current PU
+    // The "NotZero" variable does not considers modes which presented magnitude zero (OpenCV attributes ArcTan(0/0) as angle zero, which is mode 26)
+    int sampleModes[35] = {0, };
+    int sampleModesNotZERO[35] = {0, };     // <- disconsiders magnitude zero modes
+    
+    // Variables to define the current PU beginning and end
+    int vertBegin, vertEnd, horBegin, horEnd;
+    
+    vertBegin = tuRecurseWithPU.getRect(COMPONENT_Y).y0;
+    vertEnd = vertBegin + tuRecurseWithPU.getRect(COMPONENT_Y).height;
+    horBegin = tuRecurseWithPU.getRect(COMPONENT_Y).x0;
+    horEnd = horBegin + tuRecurseWithPU.getRect(COMPONENT_Y).width;
+    
+    // Counts the occurrences in current PU
+    for(int i=vertBegin; i<vertEnd; i++){
+        for(int j=horBegin; j<horEnd; j++){
+            sampleModes[predModes[i][j]]++;
+            if((int) gradMag.at<unsigned char>(i,j) > 0)
+              sampleModesNotZERO[predModes[i][j]]++;
+        }
+    }
+
+////     Saves the counted occurrences into a file
+//    std::ofstream acumulado1("acumulado_modos.csv");
+//    std::ofstream acumuladoNotZero1("acumulado_modos_sem_ZERO.csv");
+//    for(int c1=0; c1<35; c1++){
+//        acumulado1 << sampleModes[c1] << ",";
+//        acumuladoNotZero1 << sampleModesNotZERO[c1] << ",";
+//    }
+//    acumulado1 << endl;
+//    acumuladoNotZero1 << endl;
+        
+    }
+    
+    // iagostorch end
+    
     Bool doFastSearch = (numModesForFullRD != numModesAvailable);
     if (doFastSearch)
     {
