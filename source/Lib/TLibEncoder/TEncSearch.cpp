@@ -2422,7 +2422,6 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
 //    acumulado1 << endl;
 //    acumuladoNotZero1 << endl;
         
-    }
     
     // iagostorch end
     
