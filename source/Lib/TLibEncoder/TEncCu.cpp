@@ -436,7 +436,7 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
 #else
 Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth )
 #endif
-{
+{  
   TComPic* pcPic = rpcBestCU->getPic();
   DEBUG_STRING_NEW(sDebug)
   const TComPPS &pps=*(rpcTempCU->getSlice()->getPPS());
@@ -512,6 +512,10 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
 
   const Bool bBoundary = !( uiRPelX < sps.getPicWidthInLumaSamples() && uiBPelY < sps.getPicHeightInLumaSamples() );
 
+  // iagostorch begin  
+  Bool skipCondition = uiDepth >= 0;
+  if(skipCondition){
+  // iagostorch end
   if ( !bBoundary )
   {
     for (Int iQP=iMinQP; iQP<=iMaxQP; iQP++)
@@ -827,6 +831,7 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
     iMaxQP = iMinQP; // If all TUs are forced into using transquant bypass, do not loop here.
   }
 
+} // iagostorch closing bracket
   const Bool bSubBranch = bBoundary || !( m_pcEncCfg->getUseEarlyCU() && rpcBestCU->getTotalCost()!=MAX_DOUBLE && rpcBestCU->isSkipped(0) );
 
   if( bSubBranch && uiDepth < sps.getLog2DiffMaxMinCodingBlockSize() && (!getFastDeltaQp() || uiWidth > fastDeltaQPCuMaxSize || bBoundary))
