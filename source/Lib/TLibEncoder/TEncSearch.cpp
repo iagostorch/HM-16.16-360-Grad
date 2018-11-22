@@ -2305,9 +2305,9 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
         // Saves the current CTU samples into a Mat object
         const UInt uiAbsPartIdx_temp=tuRecurseWithPU.GetAbsPartIdxTU();
         Pel* samplesCTU         = pcOrgYuv ->getAddr( COMPONENT_Y, uiAbsPartIdx_temp );
-        cv::Mat currCTU = cv::Mat(64,64,CV_16U,samplesCTU);
+        cv::Mat currCTU10b = cv::Mat(64,64,CV_16U,samplesCTU);
         // TO DO Perform the following line based on the cfg information
-        currCTU = currCTU / 4;  // As we are using 10 bits encoding, the sample are divided by 4 to perform the calculations over 8 bits images
+        cv::Mat currCTU = currCTU10b / 4;  // As we are using 10 bits encoding, the sample are divided by 4 to perform the calculations over 8 bits images
 //        cv::imwrite("originalCTU_16S.png",currCTU);   // Write the current CTU into a file
         currCTU.convertTo(currCTU, CV_32F);
         
