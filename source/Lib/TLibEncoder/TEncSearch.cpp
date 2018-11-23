@@ -58,7 +58,7 @@
 using namespace cv;
 
 extern int** predModes;    // global variable to maintain the prediction modes per sample for the current CTU
-cv::Mat gradMag;    // global variable to maintain the gradient magnitude for the samples in the current CTU
+cv::Mat gradMag(cv::Size(64,64), CV_32F);    // global variable to maintain the gradient magnitude for the samples in the current CTU
 
 // Angles based on the paper Fast HEVC Intra Coding Algorithm Based on Otsu’s Method and Gradient
 float degreesOfModes[35] = {-360,-360,-46,-50.906,-56.725,-62.021,-67.891,-74.281,-81.119,-86.424,90,
@@ -2299,34 +2299,40 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
     initIntraPatternChType( tuRecurseWithPU, COMPONENT_Y, true DEBUG_STRING_PASS_INTO(sTemp2) );
 
     //iagostorch begin
-    
+//    int targetCTU = 957; // This variable is used to debug the code using specific CTUs
     // If the PU has the maximum size (PU = CTU), calculate the gradient and probable modes for each sample
-    if(uiWidthBit == 5){
+    if(uiWidthBit == 5){    // Generate the gradient matrix for current CTU
         // Saves the current CTU samples into a Mat object
         const UInt uiAbsPartIdx_temp=tuRecurseWithPU.GetAbsPartIdxTU();
         Pel* samplesCTU         = pcOrgYuv ->getAddr( COMPONENT_Y, uiAbsPartIdx_temp );
         cv::Mat currCTU10b = cv::Mat(64,64,CV_16U,samplesCTU);
         // TO DO Perform the following line based on the cfg information
-        cv::Mat currCTU = currCTU10b / 4;  // As we are using 10 bits encoding, the sample are divided by 4 to perform the calculations over 8 bits images
+        cv::Mat currCTU = currCTU10b;// / 4;  // If the input is 10 bits and it is desirable to work with 8 bits images, divide currCTU10b by 4
 //        cv::imwrite("originalCTU_16S.png",currCTU);   // Write the current CTU into a file
         currCTU.convertTo(currCTU, CV_32F);
         
         
         // Sobel operator in X and Y direction
-        cv::Mat gradx, grady, absgradx, absgrady;
+        cv::Mat gradx(cv::Size(64,64), CV_32F);
+        cv::Mat grady(cv::Size(64,64), CV_32F);
+        cv::Mat absgradx(cv::Size(64,64), CV_32F);
+        cv::Mat absgrady(cv::Size(64,64), CV_32F);
+        
         int scale = 1,delta = 0, ddepth = CV_32F;
         cv::Sobel(currCTU,gradx,ddepth,1,0,3,scale,delta,BORDER_DEFAULT);
         cv::Sobel(currCTU,grady,ddepth,0,1,3,scale,delta,BORDER_DEFAULT);
         // Absolute values
-        cv::convertScaleAbs(gradx, absgradx);
-        cv::convertScaleAbs(grady, absgrady);
-
+//        cv::convertScaleAbs(gradx, absgradx); // This method converts the output to 8 bits apart from calculating the absolute value. 
+//        cv::convertScaleAbs(grady, absgrady);
+        absgradx = abs(gradx);
+        absgrady = abs(grady);
+        
         // Does an approximation of the gradient magnitude. Average of dx and dy instead of square root of powered sum
         cv::addWeighted(absgradx, 0.5, absgrady, 0.5, 0, gradMag);
 
         // Export the CTU and its contour into files
-//        cv::imwrite("originalCTU_32F.png",currCTU);
-//        cv::imwrite("contourCTU.png",gradMag);
+//        if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("originalCTU_32F.png",currCTU/4);
+//        if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("contourCTU.png",gradMag);
 
         // Gets the orientation of the gradient in each sample of the CTU
         cv::Mat orientation = cv::Mat(64,64,CV_32F);
@@ -2337,16 +2343,16 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
 //        ofstream orientationFile("orientations.csv");
 //        orientationFile << format(orientation, cv::Formatter::FMT_CSV) << endl;
 //        orientationFile.close();
-
-//        // Saves the gradient magnitude into a file, formatted as a matrix
-//        ofstream magnitudeFile("magnitudes.csv");
-//        magnitudeFile << format(grad, cv::Formatter::FMT_CSV) << endl;
-//        magnitudeFile.close();
-
+//        if(pcCU->getCtuRsAddr() == targetCTU ){
+//            // Saves the gradient magnitude into a file, formatted as a matrix
+//            ofstream magnitudeFile("magnitudes.csv");
+//            magnitudeFile << format(gradMag, cv::Formatter::FMT_CSV) << endl;
+//            magnitudeFile.close();
+//        }
+        
         // Temporary matrixes to calculate the most probable modes based on gradient
         Mat orientation90_1, orientation90_2,orientation90_3, orientation90;
 
-        // Calculos para colocar as orientações dentro da faixa +-90 graus, na Matriz orientation90
         // Calculus to shift the gradient orientation from 0 -> 360 to -90 -> +90 range
         subtract(orientation, 180.0f, orientation90_1, (orientation > 90.0));
         orientation90_1.setTo(0, orientation90_1 > 90);       
@@ -2379,21 +2385,22 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
 
         // Transforms the orientation angles into prediction modes
         predModes = degToMode(orientationArray);
-
-        // Saves the prediction angles per sample into a file, formatted as a matrix
-//        std::ofstream out("predictionModes.csv");
-//        int c1,c2;         
-//        for(c1=0;c1<64;c1++){
-//            for(c2=0;c2<64;c2++){
-//                out << modes[c1][c2] << ",";;
-//            }
-//            out << "\n";
-//        }     
+//        if(pcCU->getCtuRsAddr() == targetCTU ){
+//            // Saves the prediction angles per sample into a file, formatted as a matrix
+//            std::ofstream out("predictionModes.csv");
+//            for(int c1=0;c1<64;c1++){
+//                for(int c2=0;c2<64;c2++){
+//                    out << predModes[c1][c2] << ",";;
+//                }
+//                out << "\n";
+//            }  
+//        }
     }
     // Counts the number of times each prediction mode occurred in the current PU
     // The "NotZero" variable does not considers modes which presented magnitude zero (OpenCV attributes ArcTan(0/0) as angle zero, which is mode 26)
-    int sampleModes[35] = {0, };
+//    int sampleModes[35] = {0, };
     int sampleModesNotZERO[35] = {0, };     // <- disconsiders magnitude zero modes
+//    int sampleModesMag[35] = {0, };     // <- sums the magnitude of each gradient instead of an unitary increment
     
     // Variables to define the current PU beginning and end
     int vertBegin, vertEnd, horBegin, horEnd;
@@ -2403,25 +2410,51 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
     horBegin = tuRecurseWithPU.getRect(COMPONENT_Y).x0;
     horEnd = horBegin + tuRecurseWithPU.getRect(COMPONENT_Y).width;
     
+    // Threshold used to verify if a given gradient should or not contribute to the calculus
+    cv::Mat currCUMags(gradMag, cv::Rect(horBegin, vertBegin, horEnd-horBegin, vertEnd-vertBegin));
+    Scalar mean, stdDev;
+    meanStdDev(currCUMags, mean, stdDev);
+    int threshold = stdDev[0]*0.1;
+    if(threshold < 10)  // Estabilishes a minimum value for the threshold
+        threshold = 10;
+    
     // Counts the occurrences in current PU
     for(int i=vertBegin; i<vertEnd; i++){
         for(int j=horBegin; j<horEnd; j++){
-            sampleModes[predModes[i][j]]++;
-            if((int) gradMag.at<unsigned char>(i,j) > 0)
+//            sampleModes[predModes[i][j]]++;
+//            sampleModesMag[predModes[i][j]] = sampleModesMag[predModes[i][j]] + (int) gradMag.at<float>(i,j);
+            if((int) gradMag.at<float>(i,j) > threshold)
               sampleModesNotZERO[predModes[i][j]]++;
         }
-    }
-
-////     Saves the counted occurrences into a file
-//    std::ofstream acumulado1("acumulado_modos.csv");
-//    std::ofstream acumuladoNotZero1("acumulado_modos_sem_ZERO.csv");
-//    for(int c1=0; c1<35; c1++){
-//        acumulado1 << sampleModes[c1] << ",";
-//        acumuladoNotZero1 << sampleModesNotZERO[c1] << ",";
+    }  
+   
+    //  Debugging info of magnitude values
+//    if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )){
+//        // Print the magnitudes into the terminal, matrix-like fashion
+////        for(int i=vertBegin; i<vertEnd; i++){
+////            for(int j=horBegin; j<horEnd; j++){
+////                cout << (int) gradMag.at<float>(i,j) << ',';
+////            }
+////            cout << endl;
+////        }
+//        
+//////     Saves the counted occurrences into a file
+////      std::ofstream accumulated("summedModes.csv");
+//        std::ofstream accumulatedNotZero("summedModesNotZERO.csv");
+//        std::ofstream accumulatedMag("summedModesMag.csv");
+//        for(int c1=0; c1<35; c1++){
+////        acumulado1 << sampleModes[c1] << ",";
+//            accumulatedMag << sampleModesMag[c1] << ",";
+//            accumulatedNotZero << sampleModesNotZERO[c1] << ",";
+//        }
+////    accumulated << endl;
+//        accumulatedNotZero << endl;
+//        
+////        accumulated.close();
+//        accumulatedNotZero.close();
+//        accumulatedMag.close();
+//        
 //    }
-//    acumulado1 << endl;
-//    acumuladoNotZero1 << endl;
-        
     
     // iagostorch end
     
