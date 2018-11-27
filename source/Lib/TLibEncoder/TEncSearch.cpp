@@ -2336,7 +2336,7 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
 
         // Gets the orientation of the gradient in each sample of the CTU
         cv::Mat orientation = cv::Mat(64,64,CV_32F);
-        cv::phase(gradx,grady,orientation,true); //false -> radians, true->degrees
+        cv::phase(gradx,-1*grady,orientation,true); //false -> radians, true->degrees
 
 
         // Saves the gradient orientation into a file, formatted as a matrix
