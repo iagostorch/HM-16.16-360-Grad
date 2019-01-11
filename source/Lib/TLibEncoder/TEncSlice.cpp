@@ -710,7 +710,7 @@ Void TEncSlice::compressSlice( TComPic* pcPic, const Bool bCompressEntireSlice, 
     boundingCtuTsAddr = pcSlice->getSliceCurEndCtuTsAddr();
     pcSlice->setSliceSegmentCurEndCtuTsAddr(boundingCtuTsAddr);
   }
-
+     
   // initialize cost values - these are used by precompressSlice (they should be parameters).
   m_uiPicTotalBits  = 0;
   m_dPicRdCost      = 0; // NOTE: This is a write-only variable!

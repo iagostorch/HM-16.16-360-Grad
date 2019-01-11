@@ -46,6 +46,65 @@
 using namespace std;
 
 
+// iagostorch begin
+
+#include <string>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <opencv2/imgproc.hpp>
+#include "opencv2/imgcodecs.hpp"
+#include <fstream>
+
+using namespace cv;
+
+extern int** predModes;    // global variable to maintain the prediction modes per sample for the current CTU
+
+struct sortedMode{
+    int mode;
+    int count;
+
+};
+
+bool modes_compare(sortedMode lhs, sortedMode rhs) { return lhs.count > rhs.count; }
+
+cv::Mat gradMag(cv::Size(64,64), CV_32F);    // global variable to maintain the gradient magnitude for the samples in the current CTU
+
+// Angles based on the paper Fast HEVC Intra Coding Algorithm Based on Otsu’s Method and Gradient
+float degreesOfModes[35] = {-360,-360,-46,-50.906,-56.725,-62.021,-67.891,-74.281,-81.119,-86.424,90,
+                            86.424,81.119,74.281,67.891,62.021,56.725,50.906,45,39.094,33.275,
+                            27.980,22.109,15.709,8.881,3.576,0,-3.576,-8.881,-15.709,-22.109,
+                            -27.980,-33.275,-39.094,-44};
+
+Mat degreesOfModesMat = Mat(1,35,CV_32F,degreesOfModes);
+
+int** degToMode(float** orientations90){
+    int i,j,smallest=0,index=0;
+    float diff[35];
+    
+    int **modes = (int **)malloc(64 * sizeof(int *)); 
+    for (i=0; i<64; i++) 
+         modes[i] = (int *)malloc(64 * sizeof(int));
+
+    for(i=0; i<64; i++){
+        for(j=0; j<64; j++){
+            smallest=0;
+            for(index=0; index<35; index++){
+             
+                diff[index] = abs(degreesOfModes[index] - orientations90[i][j]);
+                if(diff[index] < diff[smallest])
+                    smallest=index;
+            }
+            modes[i][j]=smallest;
+        }
+    }
+    
+    
+    
+    return modes;
+}
+
+
 //! \ingroup TLibEncoder
 //! \{
 
@@ -236,10 +295,10 @@ Void TEncCu::compressCtu( TComDataCU* pCtu )
 
   // analysis of CU
   DEBUG_STRING_NEW(sDebug)
-
+               
   xCompressCU( m_ppcBestCU[0], m_ppcTempCU[0], 0 DEBUG_STRING_PASS_INTO(sDebug) );
   DEBUG_STRING_OUTPUT(std::cout, sDebug)
-
+  
 #if ADAPTIVE_QP_SELECTION
   if( m_pcEncCfg->getUseAdaptQpSelect() )
   {
@@ -448,6 +507,297 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
   // get Original YUV data from picture
   m_ppcOrigYuv[uiDepth]->copyFromPicYuv( pcPic->getPicYuvOrg(), rpcBestCU->getCtuRsAddr(), rpcBestCU->getZorderIdxInCtu() );
 
+// iagostorch begin
+
+  int targetCTU = -1;
+  
+//  // Only imwrite
+//  if((uiDepth==0) && (rpcBestCU->getCtuRsAddr()==targetCTU)){
+//    Pel* samplesCTU = m_ppcOrigYuv[0]->getAddr(COMPONENT_Y, 0);
+//    
+//    cv::Mat currCTU10b = cv::Mat(64,64,CV_16U,samplesCTU);
+//    cv::Mat currCTU = currCTU10b;// / 4;  // If the input is 10 bits and it is desirable to work with 8 bits images, divide currCTU10b by 4
+////        cv::imwrite("originalCTU_16S.png",currCTU);   // Write the current CTU into a file
+//    currCTU.convertTo(currCTU, CV_32F);
+//    cv::imwrite("originalCTU_32F.png",currCTU/4);
+//    
+//   }
+
+  
+  // If it is the 64x64 CTU, calculate the gradient
+  if(uiDepth == 0){// && rpcTempCU->getCtuRsAddr() == targetCTU){
+        Pel* samplesCTU = m_ppcOrigYuv[0]->getAddr(COMPONENT_Y, 0);
+  
+        cv::Mat currCTU10b = cv::Mat(64,64,CV_16U,samplesCTU);
+        cv::Mat currCTU = currCTU10b;// / 4;  // If the input is 10 bits and it is desirable to work with 8 bits images, divide currCTU10b by 4
+//        cv::imwrite("originalCTU_16S.png",currCTU);   // Write the current CTU into a file
+        currCTU.convertTo(currCTU, CV_32F);
+//        cv::imwrite("original_CTU.png",currCTU/4);
+     
+        // Export target CTU
+//        if(rpcTempCU->getCtuRsAddr() == targetCTU) cv::imwrite("original.png",currCTU/4);
+      
+        // Sobel operator in X and Y direction
+        cv::Mat gradx(cv::Size(64,64), CV_32F);
+        cv::Mat grady(cv::Size(64,64), CV_32F);
+        cv::Mat absgradx(cv::Size(64,64), CV_32F);
+        cv::Mat absgrady(cv::Size(64,64), CV_32F);
+        
+        int scale = 1,delta = 0, ddepth = CV_32F;
+        cv::Sobel(currCTU,gradx,ddepth,1,0,3,scale,delta,BORDER_DEFAULT);
+        cv::Sobel(currCTU,grady,ddepth,0,1,3,scale,delta,BORDER_DEFAULT);
+        // Absolute values
+        absgradx = abs(gradx);
+        absgrady = abs(grady);
+        
+        // Does an approximation of the gradient magnitude. Average of dx and dy instead of square root of powered sum
+        cv::addWeighted(absgradx, 0.5, absgrady, 0.5, 0, gradMag);
+
+        // Export the CTU and its contour into files
+//        if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("originalCTU_32F.png",currCTU/4);
+//        if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("contourCTU.png",gradMag);
+
+        // Gets the orientation of the gradient in each sample of the CTU
+        cv::Mat orientation = cv::Mat(64,64,CV_32F);
+        cv::phase(gradx,-1*grady,orientation,true); //false -> radians, true->degrees
+      
+      // Saves the gradient orientation into a file, formatted as a matrix
+//        ofstream orientationFile("orientations.csv");
+//        orientationFile << format(orientation, cv::Formatter::FMT_CSV) << endl;
+//        orientationFile.close();
+//        if(pcCU->getCtuRsAddr() == targetCTU ){
+//            // Saves the gradient magnitude into a file, formatted as a matrix
+//            ofstream magnitudeFile("magnitudes.csv");
+//            magnitudeFile << format(gradMag, cv::Formatter::FMT_CSV) << endl;
+//            magnitudeFile.close();
+//        }
+        
+        // Temporary matrixes to calculate the most probable modes based on gradient
+        Mat orientation90_1, orientation90_2,orientation90_3, orientation90;
+
+        // Calculus to shift the gradient orientation from 0 -> 360 to -90 -> +90 range
+        subtract(orientation, 180.0f, orientation90_1, (orientation > 90.0));
+        orientation90_1.setTo(0, orientation90_1 > 90);       
+
+        subtract(orientation, 360.0f, orientation90_2, (orientation >= 270.0));
+
+        orientation90_3 = orientation;
+        orientation90_3.setTo(0, orientation90_3 > 90);
+
+        // Final matrix with angles in the range +-90
+        orientation90 = orientation90_1 + orientation90_2 + orientation90_3;
+      
+      //        // Saves the gradient orientation angles in the +-90 range into a file, formatted as a matrix
+//        ofstream lesserFile("orientation90.csv");
+//        lesserFile << format(orientation90, cv::Formatter::FMT_CSV) << endl;
+//        lesserFile.close();
+
+        // Calculus to map the orientation degrees into prediction modes
+        int index;
+        // Transform the OpenCV types into C++ native types
+        float **orientationArray = new float*[orientation90.rows];
+
+        for (index=0; index<orientation90.rows; ++index){
+          orientationArray[index] = new float[orientation90.cols];
+        }
+
+        for (index=0; index<orientation90.rows; ++index){
+          orientationArray[index] = orientation90.ptr<float>(index);
+        }
+
+      // Transforms the orientation angles into prediction modes
+        predModes = degToMode(orientationArray);
+//        if(rpcBestCU->getCtuRsAddr() == targetCTU){
+//            // Saves the prediction angles per sample into a file, formatted as a matrix
+//            std::ofstream out("predictionModes_CTU.csv");
+//            for(int c1=0;c1<64;c1++){
+//                for(int c2=0;c2<64;c2++){
+//                    out << predModes[c1][c2] << ",";;
+//                }
+//                out << "\n";
+//            }  
+//        }
+      
+      
+  }
+  
+  // Counts the number of times each prediction mode occurred in the current PU
+    // The "NotZero" variable does not considers modes which presented magnitude zero (OpenCV attributes ArcTan(0/0) as angle zero, which is mode 26)
+//    int sampleModes[35] = {0, };
+    int sampleModesNotZERO[35] = {0, };     // <- disconsiders magnitude zero modes
+//    int sampleModesMag[35] = {0, };     // <- sums the magnitude of each gradient instead of an unitary increment
+    
+    // Variables to define the current PU beginning and end
+    int vertBegin, vertEnd, horBegin, horEnd;
+    
+    int cuSize;
+    if(uiDepth == 0)
+        cuSize = 64;
+    else if(uiDepth == 1)
+        cuSize = 32;
+    else if(uiDepth == 2)
+        cuSize = 16;
+    else if(uiDepth ==3)
+        cuSize = 8;
+    else
+        cuSize = 4;
+    
+    vertBegin = rpcTempCU->getCUPelY()%64;
+    vertEnd = vertBegin + cuSize;
+    horBegin = rpcTempCU->getCUPelX()%64;
+    horEnd = horBegin + cuSize;
+
+//    cout << "Vert: " << vertBegin << "," << vertEnd << endl;
+//    cout << "Hori: " << horBegin << "," << horEnd << endl;
+    
+    
+//    // Threshold used to verify if a given gradient should or not contribute to the calculus
+    cv::Mat currCUMags(gradMag, cv::Rect(horBegin, vertBegin, horEnd-horBegin, vertEnd-vertBegin));
+    
+//    if((uiDepth == 0) && (rpcTempCU->getCtuRsAddr()==targetCTU))
+//       cv::imwrite("magnitude_CTU.png",currCUMags);
+
+    Scalar mean, stdDev;
+    meanStdDev(currCUMags, mean, stdDev);
+    int threshold = stdDev[0]*0.1;
+    if(threshold < 10)  // Estabilishes a minimum value for the threshold
+        threshold = 10;
+    
+    // Counts the occurrences in current PU
+    for(int i=vertBegin; i<vertEnd; i++){
+        for(int j=horBegin; j<horEnd; j++){
+            
+//            sampleModes[predModes[i][j]]++;
+//            sampleModesMag[predModes[i][j]] = sampleModesMag[predModes[i][j]] + (int) gradMag.at<float>(i,j);
+            if((int) gradMag.at<float>(i,j) > threshold)
+              sampleModesNotZERO[predModes[i][j]]++;
+        }
+    }
+    
+    // If the CU is smaller than 16x16, do not interfere in the encoding
+    Bool evaluateCondition = true;
+    if((uiDepth>0) && (uiDepth<3)){
+    struct sortedMode sortedModes[35];
+    
+    for(int c1=0; c1<35; c1++){
+        sortedModes[c1].mode = c1;
+        sortedModes[c1].count = sampleModesNotZERO[c1];
+    }
+    
+    std::sort(sortedModes, sortedModes+35, modes_compare);
+
+    int dif1, dif2, dif3;
+    
+    dif1 = abs(sortedModes[0].mode - sortedModes[1].mode);
+    dif2 = abs(sortedModes[1].mode - sortedModes[2].mode);
+    dif3 = abs(sortedModes[2].mode - sortedModes[0].mode);
+    
+    if((uiDepth == 0) && (rpcBestCU->getCtuRsAddr() == targetCTU)){
+        cout << "1º: " << sortedModes[0].mode << endl;
+        cout << "2º: " << sortedModes[1].mode << endl;
+        cout << "3º: " << sortedModes[2].mode << endl;
+        
+        cout << "Dif1: " << dif1 << endl;
+        cout << "Dif2: " << dif2 << endl;
+        cout << "Dif3: " << dif3 << endl;
+        
+    }
+    
+    int currQP = xComputeQP( rpcBestCU, uiDepth );
+    int difThreshold = currQP*(1.5/4); 
+    
+    
+    if(dif1>=difThreshold)
+        evaluateCondition = false;
+    else if(dif2>=difThreshold)
+        evaluateCondition = false;
+    else if(dif3>=difThreshold)
+        evaluateCondition = false;
+    
+    }
+//    cout << "CTU " << rpcBestCU->getCtuRsAddr() << " Depth " << uiDepth << " Evaluate " << evaluateCondition << endl;
+    
+    
+//    // Encontrar o indice dos modos que ocorrem com maior frequencia
+//    int max, second_max, maxIdx, second_maxIdx;
+//    
+//
+//    if(sampleModesNotZERO[2] > sampleModesNotZERO[3]) {
+//        second_max = sampleModesNotZERO[3];
+//        second_maxIdx = 3;
+//        max = sampleModesNotZERO[2];
+//        maxIdx = 2;
+//    } else {
+//        second_max = sampleModesNotZERO[2];
+//        second_maxIdx = 2;
+//        max = sampleModesNotZERO[3];
+//        maxIdx = 3;
+//    }
+//    
+//    for(int c1 = 4; c1 < 35; c1++){
+//    // use >= n not just > as max and second_max can hav same value. Ex:{1,2,3,3}   
+//        if(sampleModesNotZERO[c1] >= max){  
+//            second_max = max;
+//            second_maxIdx = maxIdx;
+//            max = sampleModesNotZERO[c1];          
+//            maxIdx = c1;
+//        }
+//        else if(sampleModesNotZERO[c1] > second_max){
+//            second_max=sampleModesNotZERO[c1];
+//            second_maxIdx = c1;
+//        }
+//    }
+//    
+//    if((uiDepth == 0) && (rpcBestCU->getCtuRsAddr() == targetCTU)){
+//        cout << "Max " << maxIdx << endl;
+//        cout << "Sec " << second_maxIdx << endl;
+//    }
+    
+    
+    
+    
+//    if((rpcBestCU->getCtuRsAddr() == targetCTU) && (uiDepth==1)){
+////        cout << "entrou agora" << endl;
+//        std::ofstream modes_cu("predictionModes_CU.csv");
+//                for(int c1=vertBegin;c1<vertEnd;c1++){
+//                    for(int c2=horBegin;c2<horEnd;c2++){
+//                        modes_cu << predModes[c1][c2] << ",";;
+//                    }
+//                    modes_cu << "\n";
+//                }  
+//    }
+//   
+//    //  Debugging info of magnitude values
+//    if((uiDepth == 0) && (rpcBestCU->getCtuRsAddr() == targetCTU )){
+////        // Print the magnitudes into the terminal, matrix-like fashion
+//////        for(int i=vertBegin; i<vertEnd; i++){
+//////            for(int j=horBegin; j<horEnd; j++){
+//////                cout << (int) gradMag.at<float>(i,j) << ',';
+//////            }
+//////            cout << endl;
+//////        }
+////        
+////////     Saves the counted occurrences into a file
+//////      std::ofstream accumulated("summedModes.csv");
+//        std::ofstream accumulatedNotZero("summedModesNotZERO.csv");
+////        std::ofstream accumulatedMag("summedModesMag.csv");
+//        for(int c1=0; c1<35; c1++){
+////        acumulado1 << sampleModes[c1] << ",";
+////            accumulatedMag << sampleModesMag[c1] << ",";
+//            accumulatedNotZero << sampleModesNotZERO[c1] << ",";
+//        }
+//////    accumulated << endl;
+////        accumulatedNotZero << endl;
+////        
+//////        accumulated.close();
+////        accumulatedNotZero.close();
+////        accumulatedMag.close();
+////        
+//    }
+  
+//  // iagostorch end
+    
+    
   // variable for Cbf fast mode PU decision
   Bool    doNotBlockPu = true;
   Bool    earlyDetectionSkipMode = false;
@@ -510,11 +860,10 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
 
   TComSlice * pcSlice = rpcTempCU->getPic()->getSlice(rpcTempCU->getPic()->getCurrSliceIdx());
 
-  const Bool bBoundary = !( uiRPelX < sps.getPicWidthInLumaSamples() && uiBPelY < sps.getPicHeightInLumaSamples() );
+  const Bool bBoundary = !( uiRPelX < sps.getPicWidthInLumaSamples() && uiBPelY < sps.getPicHeightInLumaSamples() ); 
 
-  // iagostorch begin  
-  Bool skipCondition = uiDepth >= 0;
-  if(skipCondition){
+//  Bool evaluateCondition = uiDepth >= 0;
+  if(evaluateCondition){
   // iagostorch end
   if ( !bBoundary )
   {
