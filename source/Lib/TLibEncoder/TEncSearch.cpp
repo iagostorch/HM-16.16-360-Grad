@@ -57,6 +57,15 @@
 
 using namespace cv;
 
+
+struct sortedMode{
+    int mode;
+    int count;
+
+};
+
+bool modes_compare(sortedMode lhs, sortedMode rhs) { return lhs.count > rhs.count; }
+
 extern int** predModes;    // global variable to maintain the prediction modes per sample for the current CTU
 cv::Mat gradMag(cv::Size(64,64), CV_32F);    // global variable to maintain the gradient magnitude for the samples in the current CTU
 
@@ -2299,7 +2308,7 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
     initIntraPatternChType( tuRecurseWithPU, COMPONENT_Y, true DEBUG_STRING_PASS_INTO(sTemp2) );
 
     //iagostorch begin
-//    int targetCTU = 957; // This variable is used to debug the code using specific CTUs
+    int targetCTU = 20; // This variable is used to debug the code using specific CTUs
     // If the PU has the maximum size (PU = CTU), calculate the gradient and probable modes for each sample
     if(uiWidthBit == 5){    // Generate the gradient matrix for current CTU
         // Saves the current CTU samples into a Mat object
@@ -2331,8 +2340,8 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
         cv::addWeighted(absgradx, 0.5, absgrady, 0.5, 0, gradMag);
 
         // Export the CTU and its contour into files
-//        if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("originalCTU_32F.png",currCTU/4);
-//        if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("contourCTU.png",gradMag);
+        // if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("originalCTU_32F.png",currCTU/4);
+        // if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )) cv::imwrite("contourCTU.png",gradMag);
 
         // Gets the orientation of the gradient in each sample of the CTU
         cv::Mat orientation = cv::Mat(64,64,CV_32F);
@@ -2429,7 +2438,7 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
     }  
    
     //  Debugging info of magnitude values
-//    if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )){
+    if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )){
 //        // Print the magnitudes into the terminal, matrix-like fashion
 ////        for(int i=vertBegin; i<vertEnd; i++){
 ////            for(int j=horBegin; j<horEnd; j++){
@@ -2440,25 +2449,61 @@ TEncSearch::estIntraPredLumaQT(TComDataCU* pcCU,
 //        
 //////     Saves the counted occurrences into a file
 ////      std::ofstream accumulated("summedModes.csv");
-//        std::ofstream accumulatedNotZero("summedModesNotZERO.csv");
+        std::ofstream accumulatedNotZero("summedModesNotZERO.csv");
 //        std::ofstream accumulatedMag("summedModesMag.csv");
-//        for(int c1=0; c1<35; c1++){
+        for(int c1=0; c1<35; c1++){
 ////        acumulado1 << sampleModes[c1] << ",";
 //            accumulatedMag << sampleModesMag[c1] << ",";
-//            accumulatedNotZero << sampleModesNotZERO[c1] << ",";
-//        }
+            accumulatedNotZero << sampleModesNotZERO[c1] << ",";
+        }
 ////    accumulated << endl;
-//        accumulatedNotZero << endl;
+        accumulatedNotZero << endl;
 //        
 ////        accumulated.close();
-//        accumulatedNotZero.close();
+        accumulatedNotZero.close();
 //        accumulatedMag.close();
 //        
-//    }
+    }
+    
+    
+    struct sortedMode sortedModes[35];
+    
+    for(int c1=0; c1<35; c1++){
+        sortedModes[c1].mode = c1;
+        sortedModes[c1].count = sampleModesNotZERO[c1];
+    }
+    
+    std::sort(sortedModes, sortedModes+35, modes_compare);
+    
+    // Different PU sizes will evaluate different numbers of modes during RDO
+    if(uiWidthBit == 5) // pu 64
+        numModesForFullRD = 3;
+    else if(uiWidthBit == 4)    // pu 32
+        numModesForFullRD = 4;
+    else if(uiWidthBit == 3)    // pu 16
+        numModesForFullRD = 5;
+    else if(uiWidthBit == 2)    // pu 8
+        numModesForFullRD = 6;
+    else if(uiWidthBit == 1)    // pu 4
+        numModesForFullRD = 7;
+    
+    // Selects the modes to be evaluated during RDO
+    uiRdModeList[0] = 0;  // Planar and DC modes are always evaluated
+    uiRdModeList[1] = 1;
+    for(int c1=2; c1<numModesForFullRD; c1++)
+        uiRdModeList[c1] = sortedModes[c1-2].mode;
+    
+    // if((uiWidthBit == 5) && (pcCU->getCtuRsAddr() == targetCTU )){
+    //     // cout << "Modos CTU " << targetCTU << endl;
+    //     for(int c1=0; c1<numModesForFullRD; c1++)
+    //         cout << uiRdModeList[c1] << "\t";
+    //     cout << endl;
+    // }
     
     // iagostorch end
     
     Bool doFastSearch = (numModesForFullRD != numModesAvailable);
+    doFastSearch = false;
     if (doFastSearch)
     {
       assert(numModesForFullRD < numModesAvailable);
